@@ -1,0 +1,17 @@
+{
+    "compilerOptions": {
+        "target": "ES6",
+        "module": "commonjs",
+        "moduleResolution": "node",
+        "outDir": "lib",
+        "rootDir": "src",
+        "strict": true,
+        "esModuleInterop": true,
+        "plugins": [
+            { "transform": "./src/transform.ts" }
+        ]
+    },
+    "include": [
+        "src/**/*"
+    ]
+}
