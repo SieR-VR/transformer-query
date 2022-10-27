@@ -1,14 +1,14 @@
 {
     "compilerOptions": {
-        "target": "ES6",
+        "target": "ESNext",
         "module": "commonjs",
         "moduleResolution": "node",
         "outDir": "lib",
-        "rootDir": "src",
         "strict": true,
         "esModuleInterop": true,
+        "resolveJsonModule": true,
         "plugins": [
-            { "transform": "./src/transform.ts" }
+            { "transform": "./src/transform.ts" },
         ]
     }
 }
