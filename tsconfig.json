@@ -10,8 +10,5 @@
         "plugins": [
             { "transform": "./src/transform.ts" }
         ]
-    },
-    "include": [
-        "src/**/*"
-    ]
+    }
 }

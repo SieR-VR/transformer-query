@@ -3,7 +3,7 @@ import { makeTransform, q } from ".";
 
 export default makeTransform([
     (tree) => {
-        tree.query(q`class Foo { bar: string = "bar"; }`)
+        tree.query(q`class SomeClass { bar: string = "bar"; }`)
             .replace((node, typeNode) => {
                 return ts.factory.createClassDeclaration(
                     undefined,

@@ -17,14 +17,14 @@ interface Queried {
     remove(): void;
 }
 
-export function q(strings: TemplateStringsArray, _hashes?: any[]): Query {
+export function q(strings: TemplateStringsArray, ..._hashes: any[]): Query {
     const hashes = _hashes as string[] || [];
 
     const original = strings.reduce((acc, str, i) => {
         return acc + str + (hashes[i] || "");
     }, "");
 
-    const ast = ts.createSourceFile("query.ts", original, ts.ScriptTarget.Latest, false);
+    const ast = ts.createSourceFile("query.ts", original, ts.ScriptTarget.ES2015, false);
 
     return {
         queryAST: ast,
@@ -48,8 +48,6 @@ export function makeTransform(
                 ast: sourceFile,
                 query(q: Query) {
                     return {
-                        ast: q.queryAST,
-                        query: q.querySource,
                         replace(replacer: (node: ts.Node, typeNode: ts.Type) => ts.Node) {
                             smallTransforms.push({
                                 query: q,
@@ -77,33 +75,17 @@ export function makeTransform(
 
             rules.forEach((rule) => rule(tree));
 
-            const a = ts.visitEachChild(sourceFile, (node) => {
-                const smallTransform = smallTransforms.find((transform) =>{
-                    const b = isNodeContains(node, transform.query);
-                    return b;
-                });
-
-                if (smallTransform) {
-                    return smallTransform.transform(node);
+            const visitor = (query: Query, transform: (node: ts.Node) => ts.Node | undefined) => (node: ts.Node): ts.Node | undefined => {
+                if (isNodeContains(node, query)) {
+                    return transform(node);
                 }
 
-                // console.log(ts.SyntaxKind[node.kind], node.getText());
+                return ts.visitEachChild(node, visitor(query, transform), context);
+            };
 
-                return ts.visitEachChild(node, (node) => {
-                    const smallTransform = smallTransforms.find((transform) =>{
-                        const b = isNodeContains(node, transform.query);
-                        return b;
-                    });
-
-                    if (smallTransform) {
-                        return smallTransform.transform(node);
-                    }
-
-                    return node;
-                }, context);
-            }, context);
-
-            return a;
+            return smallTransforms.reduce((acc, { query, transform }) => {
+                return ts.visitEachChild(acc, visitor(query, transform), context);
+            }, sourceFile);
         };
     };
 }
@@ -114,12 +96,19 @@ function isNodeContains(node: ts.Node, query: Query): boolean {
         queryAST = queryAST.getChildAt(0, query.querySource);
     }
 
-    if (node.kind !== queryAST.kind) {
-        return false;
+    let nodeAST = node;
+    while (nodeAST.kind === ts.SyntaxKind.SourceFile || nodeAST.kind === ts.SyntaxKind.SyntaxList) {
+        nodeAST = nodeAST.getChildAt(0);  
+    }
+
+    if (nodeAST.kind !== queryAST.kind) return false;
+
+    if (nodeAST.kind === ts.SyntaxKind.Identifier) {
+        return nodeAST.getText() === queryAST.getText(query.querySource);
     }
 
     const matched = queryAST.getChildren(query.querySource).map((child) => {
-        const nodeChildrenFiltered = node.getChildren().filter((nodeChild) => nodeChild.kind === child.kind);
+        const nodeChildrenFiltered = nodeAST.getChildren().filter((nodeChild) => nodeChild.kind === child.kind);
         const matched = nodeChildrenFiltered.map((nodeChild) => {
             return isNodeContains(nodeChild, {
                 queryAST: child,
@@ -127,18 +116,30 @@ function isNodeContains(node: ts.Node, query: Query): boolean {
             })
         });
 
-        if (matched.some((m) => m)) {
+        if (!matched.length || matched.some((m) => m)) {
             return true;
         }
 
         return false;
     });
 
-    console.log(matched);
-
-    return !matched.length || matched.some((m) => m);
+    return !matched.length || matched.every((m) => m);
 }
 
-function hashNodeType(checker: ts.TypeChecker, node: ts.Node): string {
-    return node.getSourceFile().fileName;
+function hashNodeType(node: ts.Node): string {
+    const fileLocation = node.getSourceFile().fileName;
+    const nodeLocation = node.getStart();
+
+    const simpleHash = (str: string) => {
+        let hash = 0;
+        for (let i = 0; i < str.length; i++) {
+            hash = ((hash << 5) - hash) + str.charCodeAt(i);
+            hash |= 0; // Convert to 32bit integer
+        }
+        return hash;
+    }
+
+    return simpleHash(`${fileLocation}:${nodeLocation}`).toString(16);
 }
+
+export class WildCard {};
