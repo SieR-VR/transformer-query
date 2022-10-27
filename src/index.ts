@@ -12,8 +12,10 @@ interface Query {
 }
 
 interface Queried {
-    replace(replacer: (node: ts.Node, typeNode: ts.Type) => ts.Node): void;
-    replaceWith(toReplace: ts.Node): void;
+    replace(replacer: (node: ts.Node, typeNode: ts.Type) => ts.Node): Queried;
+    replaceWith(toReplace: ts.Node): Queried;
+    replaceText(replacer: (node: ts.Node, type: ts.Type) => string): Queried;
+    replaceWithText(toReplace: string): Queried;
     remove(): void;
 }
 
@@ -56,18 +58,46 @@ export function makeTransform(
                                     return replacer(node, typeNode);
                                 }
                             });
+
+                            return this;
                         },
                         replaceWith(toReplace: ts.Node) {
                             smallTransforms.push({
                                 query: q,
                                 transform: (node: ts.Node) => toReplace
                             });
+
+                            return this;
+                        },
+                        replaceText(replacer: (node: ts.Node, type: ts.Type) => string) {
+                            smallTransforms.push({
+                                query: q,
+                                transform: (node: ts.Node) => {
+                                    const typeNode = checker.getTypeAtLocation(node);
+                                    const text = replacer(node, typeNode);
+                                    return ts.createSourceFile("replaced.ts", text, ts.ScriptTarget.ES2015, false);
+                                }
+                            });
+
+                            return this;
+                        },
+                        replaceWithText(toReplace: string) {
+                            smallTransforms.push({
+                                query: q,
+                                transform: (node: ts.Node) => {
+                                    return ts.createSourceFile("replaced.ts", toReplace, ts.ScriptTarget.ES2015, false);
+                                }
+                            });
+
+                            return this;
                         },
                         remove() {
                             smallTransforms.push({
                                 query: q,
                                 transform: (node: ts.Node) => undefined
                             });
+
+                            return this;
                         },
                     };
                 },
@@ -97,9 +127,11 @@ function isNodeContains(node: ts.Node, query: Query): boolean {
     }
 
     let nodeAST = node;
-    while (nodeAST.kind === ts.SyntaxKind.SourceFile || nodeAST.kind === ts.SyntaxKind.SyntaxList) {
+    while (nodeAST && (nodeAST.kind === ts.SyntaxKind.SourceFile || nodeAST.kind === ts.SyntaxKind.SyntaxList)) {
         nodeAST = nodeAST.getChildAt(0);  
     }
+    
+    if (!nodeAST || !queryAST) return false;
 
     if (nodeAST.kind !== queryAST.kind) return false;
 
