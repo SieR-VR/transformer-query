@@ -5,7 +5,7 @@ export default makeTransform([
     (tree) => {
         tree.query(q`class ${Identifier} extends ${SomeBaseClass} { a = 1 }`)
             .replaceText((node, type) => {
-                return `class A { a = 1000 }`;
+                return `class TransformedClass { a = 1000 }`;
             })
     }
 ]);

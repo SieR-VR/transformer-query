@@ -1,14 +1,15 @@
 {
   "name": "transformer-query",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "",
-  "main": "index.js",
+  "main": "lib/index.js",
+  "typings": "lib/index.d.ts",
   "scripts": {
     "dev": "ttsc"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "keywords": ["typescript", "ttypescript", "transformer", "query"],
+  "author": "SieR <nwh040512@gmail.com>",
+  "license": "MIT",
   "devDependencies": {
     "@types/node": "^18.11.7",
     "ts-node": "^10.9.1",
