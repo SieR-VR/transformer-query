@@ -1,4 +1,4 @@
-import { makeTransform, q, hashNode, Identifier } from "..";
+import { makeTransform, q, Identifier } from "..";
 import { SomeBaseClass } from "./class.spec";
 
 export default makeTransform([

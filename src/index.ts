@@ -1,6 +1,8 @@
-import ts, { convertToObject } from "typescript";
+import ts from "typescript";
 import * as path from "path";
+
 import { PluginConfig } from "./pluginConfig";
+import { Parser } from "./hyper/parser";
 
 interface Tree {
     readonly ast: ts.Node;

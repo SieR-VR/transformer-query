@@ -7,7 +7,12 @@
   "scripts": {
     "dev": "ttsc"
   },
-  "keywords": ["typescript", "ttypescript", "transformer", "query"],
+  "keywords": [
+    "typescript",
+    "ttypescript",
+    "transformer",
+    "query"
+  ],
   "author": "SieR <nwh040512@gmail.com>",
   "license": "MIT",
   "devDependencies": {
@@ -15,5 +20,8 @@
     "ts-node": "^10.9.1",
     "ttypescript": "^1.5.13",
     "typescript": "^4.8.4"
+  },
+  "dependencies": {
+    "@ronami/hypescript": "^1.1.0"
   }
 }
