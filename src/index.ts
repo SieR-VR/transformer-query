@@ -4,7 +4,7 @@ import * as path from "path";
 import { PluginConfig } from "./pluginConfig";
 import { Parser } from "./hyper/parser";
 
-interface Tree {
+interface SourceTree {
     readonly ast: ts.Node;
     query(q: Query): Queried;
 }
@@ -57,7 +57,7 @@ export function q(strings: TemplateStringsArray, ...userMatches: any[]): Query {
 }
 
 export function makeTransform(
-    rules: Array<(tree: Tree, checker: ts.TypeChecker) => void>,
+    rules: Array<(tree: SourceTree, checker: ts.TypeChecker) => void>,
 ): (program: ts.Program, pluginConfig: PluginConfig) => (context: ts.TransformationContext) => ts.Transformer<ts.SourceFile> {
     return (program, pluginConfig) => (context: ts.TransformationContext) => {
         const checker = program.getTypeChecker();
@@ -68,7 +68,7 @@ export function makeTransform(
                 transform: (node: ts.Node) => ts.Node | undefined
             }> = [];
 
-            const tree: Tree = {
+            const tree: SourceTree = {
                 ast: sourceFile,
                 query(q: Query) {
                     return {
