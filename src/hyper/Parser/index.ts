@@ -1,6 +1,6 @@
 import * as hs from "./Node";
 import * as SyntaxKind from "../Tokenizer/SyntaxKind";
-import { TokenData, Tokenizer } from "../Tokenizer";
+import { TokenData, InternalTokenizer } from "../Tokenizer";
 import { ParseResult, ParseArrayResult as ArrayResult, ParseStatementResult, ScopeType, ParseTypeResult } from "./Utils";
 import { ParsingError, Tail, TailBy, Push } from "../Utils";
 
@@ -126,7 +126,7 @@ export type ParseBlockStatementHelper<
 
 export type ParseVariableStatement<
     TokenList extends SyntaxKind.TokenSyntaxKind<any, any>[],
-    Scope extends ScopeType,
+    Scope extends ScopeType = {},
 > = TokenList[0] extends SyntaxKind.VarKeyword<any, any>
     ? ParseVariableDeclarationList<Tail<TokenList>, Scope> extends ParseResult<
         infer Node,
@@ -135,16 +135,23 @@ export type ParseVariableStatement<
         infer Scope
     > 
         ? Error extends ParsingError<any>
-            ? ParseResult<any, any, Error>
-            : ParseResult<Node, TokenList, Error, Scope>
+            ? ParseResult<Node, TokenList, Error>
+            : Node extends hs.VariableDeclarationList<any, any>
+                ? ParseResult<
+                    hs.VariableStatement<Node, string>,
+                    TokenList,
+                    null,
+                    Scope
+                >
+                : ParseResult<any, TokenList, ParsingError<"ParseVariableStatement: Node is not VariableDeclarationList.">>
         : ParseResult<any, TokenList, ParsingError<"ParseVariableStatement: ParseVariableDeclarationList Error.">>
-    : ParseResult<any, TokenList, ParsingError<"ParseVariableStatement: ParseVariableDeclarationList Error.">>;
+    : ParseResult<any, TokenList, ParsingError<"ParseVariableStatement: 'var' keyword expected.">>;
+
 
 export type ParseVariableDeclarationList<
     TokenList extends SyntaxKind.TokenSyntaxKind<any, any>[],
-    Scope extends ScopeType,
-    Result extends hs.VariableDeclaration<any, any>[] = [],
-    NeedComma extends boolean = false,
+    Scope extends ScopeType = {},
+    Result extends hs.VariableDeclaration<any, any, any>[] = []
 > = TokenList[0] extends SyntaxKind.Identifier<infer Identifier, any>
     ? TokenList[1] extends SyntaxKind.ColonToken<any, any>
         ? ParseTypeNode<TailBy<TokenList, 2>> extends ParseTypeResult<
@@ -154,7 +161,7 @@ export type ParseVariableDeclarationList<
             infer Scope
         >
             ? Error extends ParsingError<any>
-                ? ParseResult<any, any, Error>
+                ? ParseResult<Type, TokenList, Error>
                 : TokenList[0] extends SyntaxKind.EqualsToken<any, any>
                     ? ParseExpression<Tail<TokenList>, Scope> extends ParseResult<
                         infer Expression,
@@ -163,25 +170,56 @@ export type ParseVariableDeclarationList<
                         infer Scope
                     >
                         ? Error extends ParsingError<any>
-                            ? ParseResult<any, any, Error>
+                            ? ParseResult<Expression, TokenList, Error>
                             : TokenList[0] extends SyntaxKind.CommaToken<any, any>
-                                ? ParseVariableDeclarationList<Tail<TokenList>, Scope, Result, true>
+                                ? ParseVariableDeclarationList<
+                                    Tail<TokenList>, 
+                                    Scope, 
+                                    Push<
+                                        Result, 
+                                        hs.VariableDeclaration<
+                                            hs.BindingName<Identifier>, 
+                                            Type, 
+                                            Expression
+                                        >
+                                    >
+                                >
                                 : ParseResult<
-                                    hs.VariableDeclaration<hs.BindingName<Identifier>, Type, Expression>,
+                                    hs.VariableDeclarationList<
+                                        Push<
+                                            Result,
+                                            hs.VariableDeclaration<
+                                                hs.BindingName<Identifier>,
+                                                Type,
+                                                Expression
+                                            >
+                                        >,
+                                        string
+                                    >,
                                     TokenList,
                                     null,
                                     Scope
                                 >
                         : ParseResult<any, TokenList, ParsingError<"ParseVariableDeclarationList: ParseExpression Error.">>
                     : TokenList[0] extends SyntaxKind.CommaToken<any, any>
-                        ? ParseVariableDeclarationList<Tail<TokenList>, Scope, Result, true>
+                        ? ParseVariableDeclarationList<
+                            Tail<TokenList>, 
+                            Scope, 
+                            Push<Result, hs.VariableDeclaration<hs.BindingName<Identifier>, Type, undefined>>
+                        >
                         : ParseResult<
-                            hs.VariableDeclaration<hs.BindingName<Identifier>, Type, undefined>,
+                            hs.VariableDeclarationList<
+                                Push<
+                                    Result,
+                                    hs.VariableDeclaration<hs.BindingName<Identifier>, Type, undefined>
+                                >,
+                                string
+                            >,
                             TokenList,
                             null,
                             Scope
                         >
-            : Error
+            : ParseResult<any, TokenList, ParsingError<"ParseVariableDeclarationList: ParseTypeNode Error.">>
         : TokenList[1] extends SyntaxKind.EqualsToken<any, any>
             ? ParseExpression<TailBy<TokenList, 2>, Scope> extends ParseResult<
                 infer Expression,
@@ -190,20 +228,29 @@ export type ParseVariableDeclarationList<
                 infer Scope
             >
                 ? Error extends ParsingError<any>
-                    ? ParseResult<any, any, Error>
+                    ? ParseResult<Expression, TokenList, Error>
                     : TokenList[0] extends SyntaxKind.CommaToken<any, any>
-                        ? ParseVariableDeclarationList<Tail<TokenList>, Scope, Result, true>
+                        ? ParseVariableDeclarationList<Tail<TokenList>, Scope, Push<Result, hs.VariableDeclaration<hs.BindingName<Identifier>, undefined, Expression>>>
                         : ParseResult<
-                            hs.VariableDeclaration<hs.BindingName<Identifier>, undefined, Expression>,
+                            hs.VariableDeclarationList<
+                                Push<
+                                    Result,
+                                    hs.VariableDeclaration<hs.BindingName<Identifier>, undefined, Expression>
+                                >,
+                                string
+                            >,
                             TokenList,
                             null,
                             Scope
                         >
                 : ParseResult<any, TokenList, ParsingError<"ParseVariableDeclarationList: ParseExpression Error.">>
             : TokenList[1] extends SyntaxKind.CommaToken<any, any>
-                ? ParseVariableDeclarationList<Tail<TokenList>, Scope, Result, true>
+                ? ParseVariableDeclarationList<Tail<TokenList>, Scope, Result>
                 : ParseResult<
-                    hs.VariableDeclaration<hs.BindingName<Identifier>, undefined, undefined>,
+                    hs.VariableDeclarationList<Push<
+                        Result,
+                        hs.VariableDeclaration<hs.BindingName<Identifier>, undefined, undefined>
+                    >, string>,
                     TokenList,
                     null,
                     Scope
@@ -244,7 +291,10 @@ export type ParseExpression<
     TokenList extends SyntaxKind.TokenSyntaxKind<any, any>[],
     Scope extends ScopeType,
 > = TokenList[0] extends SyntaxKind.Identifier<infer Identifier, any>
-    ? ParseResult<hs.Identifier<Identifier>, Tail<TokenList>, null, Scope>
+    ? ParseResult<
+        hs.Expression<[hs.Identifier<Identifier>], Identifier>, 
+        Tail<TokenList>, 
+        null, 
+        Scope
+    >
     : never;
-
-type Test = Parse<Tokenizer<"{ var a = b }">>;

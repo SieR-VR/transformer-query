@@ -1,7 +1,7 @@
 import * as Parser from ".";
-import { Tokenizer } from "../Tokenizer";
+import { InternalTokenizer } from "../Tokenizer";
 
-type TestIdentifierToken = Tokenizer<"id">;
-type TestNumberToken = Tokenizer<"number">;
+type TestIdentifierToken = InternalTokenizer<"id">;
+type TestNumberToken = InternalTokenizer<"number">;
 
 type TestParseTypeNode = Parser.ParseTypeNode<TestIdentifierToken>;
