@@ -1,6 +1,7 @@
 # transformer-query
 
-This provides more intuitive way for interacting with ASTs.
+This is the proof-of-concept library of querying ast nodes with valid string. 
+
 Thanks for ttypescript, this made it easy to develop this library.
 
 # How to use
