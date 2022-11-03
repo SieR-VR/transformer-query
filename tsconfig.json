@@ -11,5 +11,9 @@
         "plugins": [
             { "transform": "./src/transform.ts" },
         ]
-    }
+    },
+    "exclude": [
+        "src/hyper",
+        "lib"
+    ]
 }

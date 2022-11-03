@@ -4,24 +4,189 @@ import * as path from "path";
 import { PluginConfig } from "./pluginConfig";
 import { Parser } from "./hyper/parser";
 
-interface Source<T extends ts.Node = ts.Node> {
+class Source<T extends ts.Node = ts.Node> {
+    static sourceFile: ts.SourceFile;
+    
     readonly ast: T;
-    readonly sourceFile: ts.SourceFile;
+    readonly context: ts.TransformationContext;
+    readonly checker: ts.TypeChecker;
 
-    query(q: Query): Source<ts.Node>[];
-    replace(replacer: (node: ts.Node) => ts.Node): Source<T>;
-    replaceWith(toReplace: ts.Node): Source<T>;
-    replaceText(replacer: (node: ts.Node) => string): Source<T>;
-    replaceWithText(toReplace: string): Source<T>;
-    remove(): void;
+    constructor(
+        ast: T,
+        context: ts.TransformationContext,
+        checker: ts.TypeChecker,
+    ) {
+        this.ast = ast;
+        this.context = context;
+        this.checker = checker;
+
+        this.query = this.makeQuery();
+    }
+
+    makeQuery(): (query: Tree) => SourceList {
+        return (query) => {
+            let result = new SourceList();
+
+            ts.visitEachChild(
+                this.ast,
+                this.makeVisitor((node) => {
+                    result.push(new Source(node, this.context, this.checker));
+                    return node;
+                }, query),
+                this.context
+            );
+
+            return result;
+        }
+    }
+
+    makeVisitor(transform: (node: ts.Node) => ts.Node | undefined, query: Tree): ts.Visitor {
+        return (node) => {
+            if (isNodeContains(this.checker, new Tree(node, Source.sourceFile), query)) {
+                return transform(node);
+            }
+
+            return ts.visitEachChild(node, this.makeVisitor(transform, query), this.context);
+        }
+    }
+
+    makeExactVisitor(transform: (node: ts.Node) => ts.Node | undefined, exactNode: ts.Node): ts.Visitor {
+        return (node) => {
+            if (node === exactNode) {
+                return transform(node);
+            }
+
+            return ts.visitEachChild(node, this.makeExactVisitor(transform, exactNode), this.context);
+        }
+    }
+
+    query: (query: Tree) => SourceList;
+
+    replace(replacer: (node: ts.Node) => ts.Node): Source<T> {
+        Source.sourceFile = ts.visitEachChild(Source.sourceFile, this.makeExactVisitor(replacer, this.ast), this.context);
+        return this;
+    }
+
+    replaceWith(toReplace: ts.Node): Source<T> {
+        Source.sourceFile = ts.visitEachChild(Source.sourceFile, this.makeExactVisitor((_) => toReplace, this.ast), this.context);
+        return this;
+    }
+
+    replaceText(replacer: (node: ts.Node) => string): Source<T> {
+        Source.sourceFile = ts.visitEachChild(
+            Source.sourceFile, 
+            this.makeExactVisitor((node) => ts.createSourceFile("toReplace.ts", replacer(node), ts.ScriptTarget.Latest), this.ast),
+            this.context
+        );
+
+        return this;
+    }
+
+    replaceWithText(toReplace: string): Source<T> {
+        const toReplaceNode = ts.createSourceFile("toReplace.ts", toReplace, ts.ScriptTarget.Latest);
+        Source.sourceFile = ts.visitEachChild(
+            Source.sourceFile,
+            this.makeExactVisitor((_) => toReplaceNode, this.ast),
+            this.context
+        );
+
+        return this;
+    }
+
+    remove(): void {
+        Source.sourceFile = ts.visitEachChild(
+            Source.sourceFile,
+            this.makeExactVisitor((_) => undefined, this.ast),
+            this.context
+        );
+    }
 }
 
-interface Query {
+class SourceList<T extends ts.Node = ts.Node> extends Array<Source<T>> {
+    constructor(...sources: Source<T>[]) {
+        super(...sources);
+    }
+
+    query(query: Tree): SourceList {
+        let result = new SourceList();
+
+        this.forEach(source => {
+            result.push(...source.query(query));
+        });
+
+        return result;
+    }
+
+    replace(replacer: (node: ts.Node) => ts.Node): SourceList<T> {
+        this.forEach(source => source.replace(replacer));
+        return this;
+    }
+
+    replaceWith(toReplace: ts.Node): SourceList<T> {
+        this.forEach(source => source.replaceWith(toReplace));
+        return this;
+    }
+
+    replaceText(replacer: (node: ts.Node) => string): SourceList<T> {
+        this.forEach(source => source.replaceText(replacer));
+        return this;
+    }
+
+    replaceWithText(toReplace: string): SourceList<T> {
+        this.forEach(source => source.replaceWithText(toReplace));
+        return this;
+    }
+
+    remove(): void {
+        this.forEach(source => source.remove());
+    }
+}
+
+export class Tree {
     readonly ast: ts.Node;
     readonly sourceFile: ts.SourceFile;
+
+    constructor(ast: ts.Node, sourceFile: ts.SourceFile) {
+        this.ast = ast;
+        this.sourceFile = sourceFile;
+    }
+
+    getText(): string {
+        return this.ast.getText(this.sourceFile);
+    }
+
+    get kind(): ts.SyntaxKind {
+        return this.ast.kind;
+    }
+
+    getHash(checker: ts.TypeChecker): string {
+        let symbol = checker.getSymbolAtLocation(this.ast);
+        if (!symbol)
+            throw new Error("No symbol found for node");
+
+        let tempSymbol = symbol;
+
+        try { symbol = checker.getAliasedSymbol(symbol); }
+        catch (e) { symbol = tempSymbol; }
+
+        if (!symbol.declarations)
+            throw new Error("No declarations found for symbol");
+
+        const originalDeclaration = symbol.declarations[0];
+        const fileLocation = originalDeclaration.getSourceFile().fileName;
+
+        const relative = path.relative(process.cwd(), fileLocation);
+        const nodeText = this.ast.getText(this.sourceFile);
+
+        return simpleHash(`${relative}:${nodeText}`);
+    }
+
+    getChildren(): Tree[] {
+        return this.ast.getChildren(this.sourceFile).map(child => new Tree(child, this.sourceFile));
+    }
 }
 
-export function q(strings: TemplateStringsArray, ...userMatches: any[]): Query {
+export function q(strings: TemplateStringsArray, ...userMatches: any[]): Tree {
     const hashes = (userMatches as (string | InternalWildcard)[] || []).map((match) => {
         if (match === Identifier) {
             return "__IDENTIFIER__";
@@ -35,6 +200,10 @@ export function q(strings: TemplateStringsArray, ...userMatches: any[]): Query {
             return "0xC_0_F_F_E_E";
         }
 
+        if (match === TemplateLiteral) {
+            return "`__TEMPLATE_LITERAL__`";
+        }
+
         return match;
     });
 
@@ -44,10 +213,18 @@ export function q(strings: TemplateStringsArray, ...userMatches: any[]): Query {
 
     const ast = ts.createSourceFile("query.ts", original, ts.ScriptTarget.Latest, false);
 
-    return {
-        ast,
-        sourceFile: ast,
-    };
+    let queryable: ts.Node = ast;
+    const notQueryables = new Set<ts.SyntaxKind>([
+        ts.SyntaxKind.SourceFile,
+        ts.SyntaxKind.SyntaxList,
+        ts.SyntaxKind.ExpressionStatement,
+    ]);
+
+    while (notQueryables.has(queryable.kind)) {
+        queryable = queryable.getChildAt(0, ast);
+    }
+
+    return new Tree(queryable, ast);
 }
 
 export function makeTransform(
@@ -57,141 +234,43 @@ export function makeTransform(
         const checker = program.getTypeChecker();
 
         return (sourceFile: ts.SourceFile) => {
-            const src: Source<ts.SourceFile> = {
-                ast: sourceFile,
-                sourceFile,
-                query(q) {
-                    const queryResult: Source[] = [];
-                    
-                    ts.visitEachChild(
-                        this.ast, 
-                        makeVisitor((node) => { 
-                            queryResult.push({
-                                ast: node,
-                                sourceFile,
+            Source.sourceFile = sourceFile;
+            const src: Source<ts.SourceFile> = new Source(sourceFile, context, checker);
 
-                        }, q);
-
-                        return undefined;
-                    }), context)
-                },
-            }
-
-            const makeSource = <T extends ts.Node>(ast: T, sourceFile: ts.SourceFile, q?: Query): Source<T> => {
-                return {
-                    ast,
-                    sourceFile,
-                    query: makeQuery(ast, sourceFile),
-                    replace(replacer) {
-                        ts.visitEachChild(ast, makeVisitor(replacer, q), context);
-                        return this;
-                    },
-                    replaceWith(toReplace) {
-                        ts.visitEachChild(ast, makeVisitor((node) => toReplace, q), context);
-                        return this;
-                    },
-                    replaceText(replacer) {
-                        ts.visitEachChild(ast, makeVisitor(((node) => {
-                            const toReplace = ts.createSourceFile("toReplace.ts", replacer(node), ts.ScriptTarget.Latest);
-                            return toReplace;
-                        })), context);
-                        return this;
-                    },
-                    replaceWithText(toReplace) {
-                        const toReplaceNode = ts.createSourceFile("toReplace.ts", toReplace, ts.ScriptTarget.Latest);
-                        ts.visitEachChild(ast, makeVisitor((node) => toReplaceNode), context);
-                        return this;
-                    },
-                }
-            }
-
-            const makeQuery = (ast: ts.Node, sourceFile: ts.SourceFile) => (q: Query) => {
-                const queryResult: Source[] = [];
-
-                ts.visitEachChild(
-                    ast, 
-                    makeVisitor((node) => {
-                        queryResult.push(makeSource(ast, sourceFile, q));
-                        return undefined;
-                    }, q),
-                    context
-                );
-            }
-
-
-            const makeVisitor = (transform: (node: ts.Node) => ts.Node | undefined, query?: Query) => (node: ts.Node): ts.Node | undefined => {
-                if (query && isNodeContains(checker, { node, source: sourceFile }, query)) {
-                    return transform(node);
-                }
-
-                return ts.visitEachChild(node, makeVisitor(transform, query), context);
-            };
-
-            return smallTransforms.reduce((acc, { query, transform }) => {
-                return ts.visitEachChild(acc, visitor(query, transform), context);
-            }, sourceFile);
+            rules.forEach((rule) => rule(src, checker));
+            
+            return Source.sourceFile;
         };
     };
 }
 
-function isNodeContains(checker: ts.TypeChecker, target: Target, query: Query): boolean {
-    let queryAST = query.queryAST;
-    while (queryAST && (queryAST.kind === ts.SyntaxKind.SourceFile || queryAST.kind === ts.SyntaxKind.SyntaxList || queryAST.kind === ts.SyntaxKind.ExpressionStatement)) {
-        queryAST = queryAST.getChildAt(0, query.querySource);
+function isNodeContains(checker: ts.TypeChecker, source: Tree, query: Tree): boolean {
+    if (ts.isIdentifier(source.ast) && ts.isIdentifier(query.ast)) {
+        const queryIdentifier = query.getText();
+        if (queryIdentifier.startsWith("_$") && queryIdentifier.endsWith("$_"))
+            return queryIdentifier === source.getHash(checker);
+
+        return (source.getText() === query.getText()) || (queryIdentifier === "__IDENTIFIER__");
     }
 
-    let nodeAST = target.node;
-    while (nodeAST && (nodeAST.kind === ts.SyntaxKind.SourceFile || nodeAST.kind === ts.SyntaxKind.SyntaxList || nodeAST.kind === ts.SyntaxKind.ExpressionStatement)) {
-        nodeAST = nodeAST.getChildAt(0, target.source);
+    if (ts.isStringLiteral(source.ast) && ts.isStringLiteral(query.ast)) {
+        return (source.getText() === query.getText()) || (query.getText() === "\"__STRING_LITERAL__\"");
     }
 
-    if (!nodeAST || !queryAST) return false;
-    if (nodeAST.kind !== queryAST.kind) return false;
-
-    if (nodeAST.kind === ts.SyntaxKind.Identifier) {
-        const queryIdentifier = queryAST.getText(query.querySource);
-        if (queryIdentifier.startsWith("_$") && queryIdentifier.endsWith("$_")) {
-            return queryIdentifier.slice(2, -2) === hashNode(checker, nodeAST);
-        }
-
-        return (nodeAST.getText() === queryAST.getText(query.querySource))
-            || (queryIdentifier === "__IDENTIFIER__");
+    if (ts.isNumericLiteral(source.ast) && ts.isNumericLiteral(query.ast)) {
+        return (source.getText() === query.getText()) || (query.getText() === "0xC_0_F_F_E_E");
     }
 
-    if (nodeAST.kind === ts.SyntaxKind.StringLiteral) {
-        return (nodeAST.getText() === queryAST.getText(query.querySource))
-            || (queryAST.getText(query.querySource) === "\"__STRING_LITERAL__\"");
+    if (ts.isTemplateLiteral(source.ast) && ts.isTemplateLiteral(query.ast)) {
+        if (query.getText() === "`__TEMPLATE_LITERAL__`")
+            return true;
     }
 
-    if (nodeAST.kind === ts.SyntaxKind.NumericLiteral) {
-        return (nodeAST.getText() === queryAST.getText(query.querySource))
-            || (queryAST.getText(query.querySource) === "0xC_0_F_F_E_E");
-    }
+    if (source.kind !== query.kind) return false;
 
-    if (ts.isHeritageClause(nodeAST)) {
-        const targetHeritages = nodeAST.types.map((heritage) => hashNode(checker, heritage.expression));
-        const queryHeritages = (queryAST as ts.HeritageClause).types;
-
-        return queryHeritages.every((queryHeritage) => {
-            const queryHeritageText = queryHeritage.getText(query.querySource);
-            if (queryHeritageText.startsWith("_$") && queryHeritageText.endsWith("$_")) {
-                return targetHeritages.includes(queryHeritageText.slice(2, -2));
-            }
-
-            return false;
-        });
-    }
-
-    const matched = queryAST.getChildren(query.querySource).map((child) => {
-        const nodeChildrenFiltered = nodeAST.getChildren().filter((nodeChild) => nodeChild.kind === child.kind);
-        const matched = nodeChildrenFiltered.map((nodeChild) => {
-            return isNodeContains(checker, {
-                node: nodeChild,
-                source: target.source,
-            }, {
-                queryAST: child,
-                querySource: query.querySource,
-            })
+    const matched = query.getChildren().map((child) => {
+        const matched = source.getChildren().map((nodeChild) => {
+            return isNodeContains(checker, nodeChild, child);
         });
 
         if (!matched.length || matched.some((m) => m)) {
@@ -201,34 +280,8 @@ function isNodeContains(checker: ts.TypeChecker, target: Target, query: Query): 
         return false;
     });
 
-    return !matched.length || matched.every((m) => m);
-}
-
-export function hashNode(checker: ts.TypeChecker, node: ts.Node): string {
-    let symbol = checker.getSymbolAtLocation(node);
-    if (symbol) {
-        try { symbol = checker.getAliasedSymbol(symbol); }
-        catch (e) { symbol = checker.getSymbolAtLocation(node)!; }
-
-        const fileLocation = symbol.declarations![0].getSourceFile().fileName;
-
-        const relative = path.relative(process.cwd(), fileLocation);
-        const nodeText = node.getText();
-
-        return simpleHash(`${relative}:${nodeText}`);
-    }
-    else {
-        console.log("No symbol for node", node.getText());
-
-        const fileLocation = node.getSourceFile().fileName;
-
-        const relative = path.relative(process.cwd(), fileLocation);
-        const nodeText = node.getText();
-
-        console.log("Hashing", `${relative}:${nodeText}`);
-
-        return simpleHash(`${relative}:${nodeText}`);
-    }
+    const result = !matched.length || matched.every((m) => m);
+    return result;
 }
 
 export function simpleHash(str: string) {
@@ -237,11 +290,16 @@ export function simpleHash(str: string) {
         hash = ((hash << 5) - hash) + str.charCodeAt(i);
         hash |= 0; // Convert to 32bit integer
     }
-    return Math.abs(hash).toString(16);
+    return `_$${Math.abs(hash).toString(16)}$_`;
 }
 
 export class Identifier { };
 export class StringLiteral { };
 export class NumericLiteral { };
+export class TemplateLiteral { };
 
-type InternalWildcard = typeof Identifier | typeof StringLiteral | typeof NumericLiteral;
+type InternalWildcard =
+    | typeof Identifier
+    | typeof StringLiteral
+    | typeof NumericLiteral
+    | typeof TemplateLiteral;
