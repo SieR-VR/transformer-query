@@ -4,27 +4,21 @@ import * as path from "path";
 import { PluginConfig } from "./pluginConfig";
 import { Parser } from "./hyper/parser";
 
-interface SourceTree {
-    readonly ast: ts.Node;
-    query(q: Query): Queried;
+interface Source<T extends ts.Node = ts.Node> {
+    readonly ast: T;
+    readonly sourceFile: ts.SourceFile;
+
+    query(q: Query): Source<ts.Node>[];
+    replace(replacer: (node: ts.Node) => ts.Node): Source<T>;
+    replaceWith(toReplace: ts.Node): Source<T>;
+    replaceText(replacer: (node: ts.Node) => string): Source<T>;
+    replaceWithText(toReplace: string): Source<T>;
+    remove(): void;
 }
 
 interface Query {
-    readonly queryAST: ts.Node;
-    readonly querySource: ts.SourceFile;
-}
-
-interface Target {
-    readonly node: ts.Node;
-    readonly source: ts.SourceFile;
-}
-
-interface Queried {
-    replace(replacer: (node: ts.Node, typeNode: ts.Type) => ts.Node): Queried;
-    replaceWith(toReplace: ts.Node): Queried;
-    replaceText(replacer: (node: ts.Node, type: ts.Type) => string): Queried;
-    replaceWithText(toReplace: string): Queried;
-    remove(): void;
+    readonly ast: ts.Node;
+    readonly sourceFile: ts.SourceFile;
 }
 
 export function q(strings: TemplateStringsArray, ...userMatches: any[]): Query {
@@ -51,88 +45,86 @@ export function q(strings: TemplateStringsArray, ...userMatches: any[]): Query {
     const ast = ts.createSourceFile("query.ts", original, ts.ScriptTarget.Latest, false);
 
     return {
-        queryAST: ast,
-        querySource: ast,
+        ast,
+        sourceFile: ast,
     };
 }
 
 export function makeTransform(
-    rules: Array<(tree: SourceTree, checker: ts.TypeChecker) => void>,
+    rules: Array<(src: Source, checker: ts.TypeChecker) => void>,
 ): (program: ts.Program, pluginConfig: PluginConfig) => (context: ts.TransformationContext) => ts.Transformer<ts.SourceFile> {
     return (program, pluginConfig) => (context: ts.TransformationContext) => {
         const checker = program.getTypeChecker();
 
         return (sourceFile: ts.SourceFile) => {
-            const smallTransforms: Array<{
-                query: Query,
-                transform: (node: ts.Node) => ts.Node | undefined
-            }> = [];
-
-            const tree: SourceTree = {
+            const src: Source<ts.SourceFile> = {
                 ast: sourceFile,
-                query(q: Query) {
-                    return {
-                        replace(replacer: (node: ts.Node, typeNode: ts.Type) => ts.Node) {
-                            smallTransforms.push({
-                                query: q,
-                                transform: (node: ts.Node) => {
-                                    const typeNode = checker.getTypeAtLocation(node);
-                                    return replacer(node, typeNode);
-                                }
-                            });
+                sourceFile,
+                query(q) {
+                    const queryResult: Source[] = [];
+                    
+                    ts.visitEachChild(
+                        this.ast, 
+                        makeVisitor((node) => { 
+                            queryResult.push({
+                                ast: node,
+                                sourceFile,
 
-                            return this;
-                        },
-                        replaceWith(toReplace: ts.Node) {
-                            smallTransforms.push({
-                                query: q,
-                                transform: (node: ts.Node) => toReplace
-                            });
+                        }, q);
 
-                            return this;
-                        },
-                        replaceText(replacer: (node: ts.Node, type: ts.Type) => string) {
-                            smallTransforms.push({
-                                query: q,
-                                transform: (node: ts.Node) => {
-                                    const typeNode = checker.getTypeAtLocation(node);
-                                    const text = replacer(node, typeNode);
-                                    return ts.createSourceFile("replaced.ts", text, ts.ScriptTarget.ES2015, false);
-                                }
-                            });
-
-                            return this;
-                        },
-                        replaceWithText(toReplace: string) {
-                            smallTransforms.push({
-                                query: q,
-                                transform: (node: ts.Node) => {
-                                    return ts.createSourceFile("replaced.ts", toReplace, ts.ScriptTarget.ES2015, false);
-                                }
-                            });
-
-                            return this;
-                        },
-                        remove() {
-                            smallTransforms.push({
-                                query: q,
-                                transform: (node: ts.Node) => undefined
-                            });
-
-                            return this;
-                        },
-                    };
+                        return undefined;
+                    }), context)
                 },
-            };
+            }
 
-            rules.forEach((rule) => rule(tree, checker));
+            const makeSource = <T extends ts.Node>(ast: T, sourceFile: ts.SourceFile, q?: Query): Source<T> => {
+                return {
+                    ast,
+                    sourceFile,
+                    query: makeQuery(ast, sourceFile),
+                    replace(replacer) {
+                        ts.visitEachChild(ast, makeVisitor(replacer, q), context);
+                        return this;
+                    },
+                    replaceWith(toReplace) {
+                        ts.visitEachChild(ast, makeVisitor((node) => toReplace, q), context);
+                        return this;
+                    },
+                    replaceText(replacer) {
+                        ts.visitEachChild(ast, makeVisitor(((node) => {
+                            const toReplace = ts.createSourceFile("toReplace.ts", replacer(node), ts.ScriptTarget.Latest);
+                            return toReplace;
+                        })), context);
+                        return this;
+                    },
+                    replaceWithText(toReplace) {
+                        const toReplaceNode = ts.createSourceFile("toReplace.ts", toReplace, ts.ScriptTarget.Latest);
+                        ts.visitEachChild(ast, makeVisitor((node) => toReplaceNode), context);
+                        return this;
+                    },
+                }
+            }
 
-            const visitor = (query: Query, transform: (node: ts.Node) => ts.Node | undefined) => (node: ts.Node): ts.Node | undefined => {
-                if (isNodeContains(checker, { node, source: sourceFile }, query)) {
+            const makeQuery = (ast: ts.Node, sourceFile: ts.SourceFile) => (q: Query) => {
+                const queryResult: Source[] = [];
+
+                ts.visitEachChild(
+                    ast, 
+                    makeVisitor((node) => {
+                        queryResult.push(makeSource(ast, sourceFile, q));
+                        return undefined;
+                    }, q),
+                    context
+                );
+            }
+
+
+            const makeVisitor = (transform: (node: ts.Node) => ts.Node | undefined, query?: Query) => (node: ts.Node): ts.Node | undefined => {
+                if (query && isNodeContains(checker, { node, source: sourceFile }, query)) {
                     return transform(node);
                 }
 
-                return ts.visitEachChild(node, visitor(query, transform), context);
+                return ts.visitEachChild(node, makeVisitor(transform, query), context);
             };
 
             return smallTransforms.reduce((acc, { query, transform }) => {
@@ -237,15 +229,6 @@ export function hashNode(checker: ts.TypeChecker, node: ts.Node): string {
 
         return simpleHash(`${relative}:${nodeText}`);
     }
-}
-
-function hashType(type: ts.Type): string {
-    const fileLocation = type.symbol!.declarations![0].getSourceFile().fileName;
-
-    const relative = path.relative(process.cwd(), fileLocation);
-    const nodeText = type.symbol!.declarations![0].getText();
-
-    return simpleHash(`${relative}:${nodeText}`);
 }
 
 export function simpleHash(str: string) {

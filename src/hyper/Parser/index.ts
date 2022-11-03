@@ -1,6 +1,6 @@
 import * as hs from "./Node";
 import * as SyntaxKind from "../Tokenizer/SyntaxKind";
-import { TokenData, InternalTokenizer } from "../Tokenizer";
+import { TokenData } from "../Tokenizer";
 import { ParseResult, ParseArrayResult as ArrayResult, ParseStatementResult, ScopeType, ParseTypeResult } from "./Utils";
 import { ParsingError, Tail, TailBy, Push } from "../Utils";
 
