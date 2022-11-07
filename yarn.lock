@@ -27,11 +27,6 @@
     "@jridgewell/resolve-uri" "^3.0.3"
     "@jridgewell/sourcemap-codec" "^1.4.10"
 
-"@ronami/hypescript@^1.1.0":
-  version "1.1.0"
-  resolved "https://registry.yarnpkg.com/@ronami/hypescript/-/hypescript-1.1.0.tgz#9ffc698ef660bf027e5548bfa4ba8455156db310"
-  integrity sha512-fdT6GH0R15OoPiiMxbeWJcYZnuTKKKAKQrGIrOnLhclLUAyOuDbVo5C3BGtjHYapxQ5weQ+OFiTaaqgsc3yOPw==
-
 "@tsconfig/node10@^1.0.7":
   version "1.0.9"
   resolved "https://registry.yarnpkg.com/@tsconfig/node10/-/node10-1.0.9.tgz#df4907fc07a886922637b15e02d4cebc4c0021b2"
