@@ -6,12 +6,115 @@ Thanks for ttypescript, this made it easy to develop this library.
 
 # How to use
 
-![ipqfgygfszmz6mbm22to](https://user-images.githubusercontent.com/51986318/198257371-2654bbb3-bb5f-4cf4-8343-d1d4d13c9578.png)
+Install [ttypescript](https://github.com/cevek/ttypescript)
 
-makeTransform() returns ttypescript transform function. So, we can use like that.
+```
+npm install ttypescript -D
+```
 
-Query should be tagged string literal. And it accepts imported variable or interal wildcard.
+And use ```ttsc``` instead of ```tsc```.
 
-And call chain, which appears next of query, can return valid typescript code or ts.Node interface.
+## (Optional) Register Transformer-Query Transform
 
-That's it! after this, just register it with the method described on [ttypescript](https://github.com/cevek/ttypescript).
+**To use imported wildcard query, you should register transform.**
+
+Just add this
+
+```json
+{
+    ...
+    "compilerOptions": {
+        "plugins": { "transform": "transformer-query/lib/transform" }
+    }
+}
+```
+
+to your ```tsconfig.json```
+
+That's it!
+
+## Make Transform
+
+```typescript
+import { makeTransform } from "transformer-query";
+
+export default makeTransform([
+    (source, checker) => {
+        ...
+    }
+]);
+
+```
+
+## Query
+
+```typescript
+
+import { q } from "transformer-query";
+
+...
+
+(source, checker) => {
+    source.query(q`class ToTransform {}`)
+}
+
+...
+
+```
+
+### Query Wildcard
+
+```typescript
+
+import { q, Identifier } from "transformer-query";
+import { MyClass } from "./MyClass";
+
+...
+
+(source, checker) => {
+    source.query(q`class ${Identifier} extends ${MyClass} {}`)
+}
+
+...
+
+```
+
+**Note: To use Imported Wildcard, you should follow instruction on [above](#optional-register-transformer-query-transform)**
+
+## Replacing
+
+Transformer-Query provides five kinds of replace method.
+
+Function Signatures
+
+```typescript
+
+replace(replacer: (node: ts.Node) => ts.Node): Source<T>;
+
+replaceWith(toReplace: ts.Node): Source<T>;
+
+replaceText(replacer: (node: ts.Node) => string): Source<T>;
+
+replaceWithText(toReplace: string): Source<T>;
+
+remove(): void;
+
+```
+
+To replace, just call replace method with call-chain.
+
+Ex)
+
+```typescript
+
+...
+
+(source, checker) => {
+    source
+        .query(q`class ${Identifier} {}`)
+        .replaceWithText("class Transformed {}");
+}
+
+...
+
+```
