@@ -2,7 +2,6 @@ import ts from "typescript";
 import * as path from "path";
 
 import { PluginConfig } from "./pluginConfig";
-import { Parser } from "./hyper/parser";
 
 class Source<T extends ts.Node = ts.Node> {
     static sourceFile: ts.SourceFile;
