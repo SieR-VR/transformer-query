@@ -10,10 +10,10 @@ const reservedWildcard = isDev ? [
     simpleHash("src/index.ts:NumericLiteral"),
     simpleHash("src/index.ts:TemplateLiteral"),
 ] : [
-    simpleHash("node_modules/transformer-query/lib/index.js:Identifier"),
-    simpleHash("node_modules/transformer-query/lib/index.js:StringLiteral"),
-    simpleHash("node_modules/transformer-query/lib/index.js:NumericLiteral"),
-    simpleHash("node_modules/transformer-query/lib/index.js:TemplateLiteral"),
+    simpleHash("node_modules/transformer-query/lib/index.d.ts:Identifier"),
+    simpleHash("node_modules/transformer-query/lib/index.d.ts:StringLiteral"),
+    simpleHash("node_modules/transformer-query/lib/index.d.ts:NumericLiteral"),
+    simpleHash("node_modules/transformer-query/lib/index.d.ts:TemplateLiteral"),
 ]
 
 export default makeTransform([
