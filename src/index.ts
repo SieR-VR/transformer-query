@@ -3,7 +3,7 @@ import * as path from "path";
 
 import { PluginConfig } from "./pluginConfig";
 
-class Source<T extends ts.Node = ts.Node> {
+export class Source<T extends ts.Node = ts.Node> {
     static sourceFile: ts.SourceFile;
     
     private readonly ast: T;
@@ -105,7 +105,7 @@ class Source<T extends ts.Node = ts.Node> {
     }
 }
 
-class SourceList<T extends ts.Node = ts.Node> extends Array<Source<T>> {
+export class SourceList<T extends ts.Node = ts.Node> extends Array<Source<T>> {
     constructor(...sources: Source<T>[]) {
         super(...sources);
     }
