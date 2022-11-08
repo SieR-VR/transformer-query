@@ -6,16 +6,16 @@ import { PluginConfig } from "./pluginConfig";
 export class Source<T extends ts.Node = ts.Node> {
     static sourceFile: ts.SourceFile;
     
-    private readonly ast: T;
+    readonly node: T;
     private readonly context: ts.TransformationContext;
     private readonly checker: ts.TypeChecker;
 
     constructor(
-        ast: T,
+        node: T,
         context: ts.TransformationContext,
         checker: ts.TypeChecker,
     ) {
-        this.ast = ast;
+        this.node = node;
         this.context = context;
         this.checker = checker;
 
@@ -27,7 +27,7 @@ export class Source<T extends ts.Node = ts.Node> {
             let result = new SourceList();
 
             ts.visitEachChild(
-                this.ast,
+                this.node,
                 this.makeVisitor((node) => {
                     result.push(new Source(node, this.context, this.checker));
                     return node;
@@ -62,19 +62,19 @@ export class Source<T extends ts.Node = ts.Node> {
     query: (query: Tree) => SourceList;
 
     replace(replacer: (node: ts.Node) => ts.Node): Source<T> {
-        Source.sourceFile = ts.visitEachChild(Source.sourceFile, this.makeExactVisitor(replacer, this.ast), this.context);
+        Source.sourceFile = ts.visitEachChild(Source.sourceFile, this.makeExactVisitor(replacer, this.node), this.context);
         return this;
     }
 
     replaceWith(toReplace: ts.Node): Source<T> {
-        Source.sourceFile = ts.visitEachChild(Source.sourceFile, this.makeExactVisitor((_) => toReplace, this.ast), this.context);
+        Source.sourceFile = ts.visitEachChild(Source.sourceFile, this.makeExactVisitor((_) => toReplace, this.node), this.context);
         return this;
     }
 
     replaceText(replacer: (node: ts.Node) => string): Source<T> {
         Source.sourceFile = ts.visitEachChild(
             Source.sourceFile, 
-            this.makeExactVisitor((node) => ts.createSourceFile("toReplace.ts", replacer(node), ts.ScriptTarget.Latest), this.ast),
+            this.makeExactVisitor((node) => ts.createSourceFile("toReplace.ts", replacer(node), ts.ScriptTarget.Latest), this.node),
             this.context
         );
 
@@ -85,7 +85,7 @@ export class Source<T extends ts.Node = ts.Node> {
         const toReplaceNode = ts.createSourceFile("toReplace.ts", toReplace, ts.ScriptTarget.Latest);
         Source.sourceFile = ts.visitEachChild(
             Source.sourceFile,
-            this.makeExactVisitor((_) => toReplaceNode, this.ast),
+            this.makeExactVisitor((_) => toReplaceNode, this.node),
             this.context
         );
 
@@ -95,7 +95,7 @@ export class Source<T extends ts.Node = ts.Node> {
     remove(): void {
         Source.sourceFile = ts.visitEachChild(
             Source.sourceFile,
-            this.makeExactVisitor((_) => undefined, this.ast),
+            this.makeExactVisitor((_) => undefined, this.node),
             this.context
         );
     }
