@@ -6,9 +6,9 @@ import { PluginConfig } from "./pluginConfig";
 class Source<T extends ts.Node = ts.Node> {
     static sourceFile: ts.SourceFile;
     
-    readonly ast: T;
-    readonly context: ts.TransformationContext;
-    readonly checker: ts.TypeChecker;
+    private readonly ast: T;
+    private readonly context: ts.TransformationContext;
+    private readonly checker: ts.TypeChecker;
 
     constructor(
         ast: T,
@@ -22,7 +22,7 @@ class Source<T extends ts.Node = ts.Node> {
         this.query = this.makeQuery();
     }
 
-    makeQuery(): (query: Tree) => SourceList {
+    private makeQuery(): (query: Tree) => SourceList {
         return (query) => {
             let result = new SourceList();
 
@@ -39,7 +39,7 @@ class Source<T extends ts.Node = ts.Node> {
         }
     }
 
-    makeVisitor(transform: (node: ts.Node) => ts.Node | undefined, query: Tree): ts.Visitor {
+    private makeVisitor(transform: (node: ts.Node) => ts.Node | undefined, query: Tree): ts.Visitor {
         return (node) => {
             if (isNodeContains(this.checker, new Tree(node, Source.sourceFile), query)) {
                 return transform(node);
@@ -49,7 +49,7 @@ class Source<T extends ts.Node = ts.Node> {
         }
     }
 
-    makeExactVisitor(transform: (node: ts.Node) => ts.Node | undefined, exactNode: ts.Node): ts.Visitor {
+    private makeExactVisitor(transform: (node: ts.Node) => ts.Node | undefined, exactNode: ts.Node): ts.Visitor {
         return (node) => {
             if (node === exactNode) {
                 return transform(node);
@@ -99,6 +99,10 @@ class Source<T extends ts.Node = ts.Node> {
             this.context
         );
     }
+
+    then<R>(transform: (source: Source<T>) => R): R {
+        return transform(this);
+    }
 }
 
 class SourceList<T extends ts.Node = ts.Node> extends Array<Source<T>> {
@@ -138,6 +142,10 @@ class SourceList<T extends ts.Node = ts.Node> extends Array<Source<T>> {
 
     remove(): void {
         this.forEach(source => source.remove());
+    }
+
+    then<R>(transform: (source: SourceList<T>) => R): R {
+        return transform(this);
     }
 }
 
